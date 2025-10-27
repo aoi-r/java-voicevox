@@ -1,0 +1,89 @@
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+
+
+
+public class Main {
+    public static void main(String[] args) throws IOException, InterruptedException {
+
+        // ==============================
+        // 0. 前準備
+        // ==============================
+        // VoiceVoxのサーバーURL（デフォルトではローカルホスト50021番ポート）
+        String BASE_URL = "http://192.168.70.66:50021";
+
+        // 合成したいテキスト
+        String text = "こんにちは、これはJavaからのテストです。";
+
+        // 話者ID（例: 1 = 四国めたん）
+        int speaker = 1;
+
+        // HTTPクライアントを用意
+        HttpClient client = HttpClient.newHttpClient();
+
+
+        // ==============================
+        // 1. audio_queryを作成する
+        // ==============================
+        // ここでは音声の抑揚などを生成するための情報をサーバーに作ってもらう
+        // URLの末尾に ?text=〇〇&speaker=〇〇 をつけてPOSTする
+
+        String encodedText = URLEncoder.encode(text, "UTF-8");
+        String audioQueryUrl = BASE_URL + "/audio_query?text=" + encodedText + "&speaker=" + speaker;
+
+        // POSTリクエスト（ボディなし）
+        HttpRequest audioQueryRequest = HttpRequest.newBuilder()
+                .uri(URI.create(audioQueryUrl))
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        // サーバーに送信してレスポンスを受け取る
+        HttpResponse<String> audioQueryResponse =
+                client.send(audioQueryRequest, HttpResponse.BodyHandlers.ofString());
+
+        // ステータスコード（200なら成功）
+        System.out.println("audio_query status: " + audioQueryResponse.statusCode());
+
+        // 応答ボディ（JSON文字列）
+        String audioQueryJson = audioQueryResponse.body();
+        System.out.println("audio_query response JSON:");
+        System.out.println(audioQueryJson);
+
+        // ==============================
+        // 2. synthesisで音声を生成
+        // ==============================
+        // audio_queryの結果（JSON）をそのままPOSTして音声データをもらう
+
+        String synthesisUrl = BASE_URL + "/synthesis?speaker=" + speaker;
+
+        // POSTのContent-Typeはapplication/json
+        HttpRequest synthesisRequest = HttpRequest.newBuilder()
+                .uri(URI.create(synthesisUrl))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(audioQueryJson))
+                .build();
+
+        // 音声データ（バイナリ）として受け取る
+        HttpResponse<byte[]> synthesisResponse =
+                client.send(synthesisRequest, HttpResponse.BodyHandlers.ofByteArray());
+
+        System.out.println("synthesis status: " + synthesisResponse.statusCode());
+
+        // 返ってきたデータはWAVファイル形式
+        byte[] wavData = synthesisResponse.body();
+
+        // ==============================
+        // 3. ファイルに保存
+        // ==============================
+        // WAVファイルとして出力
+        Files.write(Paths.get("output.wav"), wavData);
+
+        System.out.println("音声ファイルを output.wav として保存しました。");
+    }
+}
